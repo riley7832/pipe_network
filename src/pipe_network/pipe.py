@@ -1,4 +1,5 @@
 import math
+from abc import ABC, abstractmethod
 from collections.abc import Hashable
 from dataclasses import dataclass
 
@@ -41,6 +42,9 @@ def swamee_jain_friction_factor(pipe: Pipe, fluid: Fluid):
 class Node:
     identifier: Hashable
     demand: float  # flow demand. Positive means the node consumes flow
+    pressure: float | None = None  # fixed gauge pressure, Pa
+    elevation: float = 0.0  # m above the chosen datum
+    solved_pressure: float | None = None
 
     def __hash__(self) -> int:
         return hash(self.identifier)
@@ -52,8 +56,21 @@ class Node:
         return str(self.identifier)
 
 
+class HydraulicItem(ABC):
+    """A directed connection between two nodes with a flow-dependent head change."""
+
+    identifier: Hashable
+    start_node: Node
+    end_node: Node
+    flowrate: float
+
+    @abstractmethod
+    def head_change(self, flowrate: float, fluid: Fluid) -> float:
+        """Return head drop from start to end (negative means head is added)."""
+
+
 @dataclass
-class Pipe:
+class Pipe(HydraulicItem):
     identifier: Hashable
     start_node: Node
     end_node: Node
@@ -87,3 +104,56 @@ class Pipe:
 
     def friction_factor(self, fluid):
         return swamee_jain_friction_factor(pipe=self, fluid=fluid)
+
+    def head_change(self, flowrate: float, fluid: Fluid) -> float:
+        """Return signed Darcy-Weisbach head loss in the pipe's orientation."""
+        self.flowrate = flowrate
+        return self.resistance_factor(fluid) * flowrate * abs(flowrate)
+
+
+@dataclass
+class Reservoir(Node):
+    """Fixed-pressure boundary, normally specified by its water-surface pressure."""
+
+    demand: float = 0.0
+    pressure: float | None = 0.0
+
+
+@dataclass
+class Pump(HydraulicItem):
+    """Pump link with head curve H(Q) = shutoff_head - curve_coefficient * Q²."""
+
+    identifier: Hashable
+    start_node: Node
+    end_node: Node
+    shutoff_head: float  # m
+    curve_coefficient: float = 0.0  # m / (m³/s)²
+    flowrate: float = 0.0
+
+    def head_gain(self) -> float:
+        """Evaluate the pump curve at its current flow rate, in metres of head."""
+        return self.shutoff_head - self.curve_coefficient * self.flowrate**2
+
+    def head_change(self, flowrate: float, fluid: Fluid) -> float:
+        """Return negative head loss because a pump adds energy to the flow."""
+        self.flowrate = flowrate
+        return -self.head_gain()
+
+
+@dataclass
+class Fitting(HydraulicItem):
+    """A local-loss element, such as a bend, valve, or contraction."""
+
+    identifier: Hashable
+    start_node: Node
+    end_node: Node
+    loss_coefficient: float
+    reference_diameter: float
+    flowrate: float = 0.0
+
+    def head_change(self, flowrate: float, fluid: Fluid) -> float:
+        """Return signed local head loss using the fitting's reference diameter."""
+        self.flowrate = flowrate
+        area = np.pi * self.reference_diameter**2 / 4
+        velocity = flowrate / area
+        return self.loss_coefficient * velocity * abs(velocity) / (2 * gravity)

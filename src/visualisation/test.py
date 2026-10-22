@@ -1,8 +1,10 @@
+from pathlib import Path
+
 import matplotlib.pyplot as plt
 import networkx as nx
 import sympy as sp
 
-from pipe_network.network import PipeNetwork, solve_hardy_cross
+from pipe_network.network import PipeNetwork, solve_network, solve_hardy_cross
 from pipe_network.pipe import Fluid, Node, Pipe
 
 
@@ -30,7 +32,7 @@ def compute_sources_and_sinks(G, tolerance=1e-9):
     net_flows = {node: 0.0 for node in G.nodes}
 
     for u, v, data in G.edges(data=True):
-        q = data["pipe"].flowrate
+        q = data["item"].flowrate
 
         # Positive flow is u -> v
         net_flows[u] += q
@@ -43,7 +45,7 @@ def compute_sources_and_sinks(G, tolerance=1e-9):
     return sources, sinks
 
 
-def visualise_network(network):
+def visualise_network(network, file_name: str):
     G = network.network
     sources, sinks = compute_sources_and_sinks(G)
 
@@ -98,7 +100,7 @@ def visualise_network(network):
 
     # Draw edges in the direction of flow
     for u, v, data in G.edges(data=True):
-        flow: float = data["pipe"].flowrate
+        flow: float = data["item"].flowrate
         edge = (u, v) if flow >= 0 else (v, u)
 
         nx.draw_networkx_edges(
@@ -113,7 +115,7 @@ def visualise_network(network):
 
     # Pipe flow labels
     edge_labels = {
-        (u, v): f"Q={abs(data['pipe'].flowrate):.4f}"
+        (u, v): f"Q={abs(data['item'].flowrate):.4f}"
         for u, v, data in G.edges(data=True)
     }
     nx.draw_networkx_edge_labels(G, pos, edge_labels=edge_labels, font_size=8)
@@ -122,13 +124,17 @@ def visualise_network(network):
     plt.legend()
     plt.axis("off")
     plt.tight_layout()
+    # Resolve output from the repository root, regardless of the working directory.
+    output_dir = Path(__file__).resolve().parents[0] / "output"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    plt.savefig(output_dir / f"{file_name}.png", bbox_inches="tight")
     plt.show()
 
 
 def main():
     water = Fluid(density=1000, viscosity=0.001)
     start_node = Node("start", demand=-1)
-    end_node = Node("end", demand=1)
+    end_node = Node("end", demand=1, pressure=0)
     n1 = Node("n1", demand=0)
     n2 = Node("n2", demand=5)
     n3 = Node("n3", demand=-5)
@@ -205,8 +211,11 @@ def main():
     network.add_pipe(pipe7)
     # plot_digraph(network)
     # print(network.loops)
+    # solve_network(network, max_iterations=1000)
+    # visualise_network(network=network, file_name="New Solver")
+
     solve_hardy_cross(network, max_iterations=1000)
-    visualise_network(network=network)
+    visualise_network(network=network, file_name="Hardy Cross")
     for pipe in network.pipes:
         print(pipe.flowrate)
 
