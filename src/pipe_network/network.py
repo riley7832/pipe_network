@@ -142,7 +142,7 @@ def solve_hardy_cross(
                     raise ValueError(f"No edge connecting {end_node} and {start_node}")
 
                 # Gets the pipe out of the network
-                pipe: Pipe = network.get_pipe_between(
+                pipe: HydraulicItem = network.get_pipe_between(
                     start_node=edge_node_tuple[0], end_node=edge_node_tuple[1]
                 )
                 flow = pipe.flowrate
