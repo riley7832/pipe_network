@@ -16,7 +16,8 @@ class Fluid:
 def swamee_jain_friction_factor(pipe: Pipe, fluid: Fluid):
     fluid_velocity = abs(pipe.flowrate) / pipe.cross_sectional_area
     reynolds = fluid.density * fluid_velocity * pipe.inner_diameter / fluid.viscosity
-
+    if reynolds == 0:
+        return 0
     f_laminar = 64 / reynolds
     f_turbulent = (
         0.25
@@ -66,6 +67,17 @@ class Pipe:
         return np.pi * (self.inner_diameter / 2) ** 2
 
     def resistance_factor(self, fluid):
+        """This assumes circular pipe. It is calculated by rearranging the darcy weisbach equation
+        for the flowrate - i.e. dP = f * (L/D) * (rho*u**2)/2
+        Substitute u for the Q/A
+        Express A in terms of diameter
+
+        Args:
+            fluid (_type_): _description_
+
+        Returns:
+            _type_: _description_
+        """
         return (
             8
             * self.friction_factor(fluid=fluid)
