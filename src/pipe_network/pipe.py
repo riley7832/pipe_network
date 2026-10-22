@@ -129,9 +129,22 @@ class Pump(HydraulicItem):
     shutoff_head: float  # m
     curve_coefficient: float = 0.0  # m / (m³/s)²
     flowrate: float = 0.0
+    head_curve: tuple[tuple[float, float], ...] | None = None
 
     def head_gain(self) -> float:
         """Evaluate the pump curve at its current flow rate, in metres of head."""
+        if self.head_curve:
+            # Interpolate between curve points and linearly extrapolate beyond the ends.
+            points = self.head_curve
+            for (q0, h0), (q1, h1) in zip(points, points[1:]):
+                if q0 <= self.flowrate <= q1:
+                    return h0 + (h1 - h0) * (self.flowrate - q0) / (q1 - q0)
+            (q0, h0), (q1, h1) = (
+                (points[0], points[1])
+                if self.flowrate < points[0][0]
+                else (points[-2], points[-1])
+            )
+            return h0 + (h1 - h0) * (self.flowrate - q0) / (q1 - q0)
         return self.shutoff_head - self.curve_coefficient * self.flowrate**2
 
     def head_change(self, flowrate: float, fluid: Fluid) -> float:
