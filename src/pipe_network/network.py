@@ -54,50 +54,59 @@ class PipeNetwork:
         return [item for item in self.items if isinstance(item, Pipe)]
 
     def initialise_flows(self) -> None:
-        """Initialise pipe flows by splitting through a spanning tree"""
+        """Initialise pipe flows by minimising sum(r * Q**2).
 
-        # start with an undirected graph
-        # get the pipes and the inlet nodes
-        graph = self.network.to_undirected()
-        inlets = [node for node in graph if node.demand < 0]
-        if not inlets:
-            raise ValueError("No inlet nodes")
+        Assumptions:
+        - Each node has a `demand` attribute (positive = withdrawal,
+        negative = supply).
+        - Each edge stores a Pipe object under "pipe".
+        - Each Pipe has `start_node`, `end_node`, `flow`, and `r`.
+        - Each pipe's `r` is positive.
+        """
 
-        # Add a temporary root connected to every inlet so each source starts
-        # with its own outgoing flow in the spanning tree.
-        root = object()
-        spanning_graph = graph.copy()
-        spanning_graph.add_node(root)
-        spanning_graph.add_edges_from((root, inlet) for inlet in inlets)
-        tree = nx.bfs_tree(spanning_graph, source=root)
-        # initialise the pipe flows to 0
-        for pipe in self.items:
-            pipe.flowrate = 0
-
-        # Work from the leaves towards the inlets. Each tree branch carries
-        # the sum of demands downstream of that branch, preserving continuity.
-        subtree_demand: dict[Node | object, float] = {}
-        for node in reversed(list(nx.topological_sort(tree))):
-            if node is root:
-                continue
-
-            downstream_demand = node.demand + sum(
-                subtree_demand[child] for child in tree.successors(node)
+        edges = list(self.network.edges(data=True))
+        nodes = list(
+            dict.fromkeys(
+                node
+                for _, _, data in edges
+                for node in (
+                    data["item"].start_node,
+                    data["item"].end_node,
+                )
             )
-            subtree_demand[node] = downstream_demand
+        )
 
-            parent = next(tree.predecessors(node))
-            if parent is root:
-                # The synthetic root only connects the inlet trees; it is not
-                # a real network node and therefore has no hydraulic link.
-                continue
+        n, m = len(nodes), len(edges)
+        node_idx = {node: i for i, node in enumerate(nodes)}
 
-            item = self.get_pipe_between(start_node=parent, end_node=node)
-            item.flowrate = (
-                downstream_demand
-                if item.start_node == parent
-                else -downstream_demand
-            )
+        n, m = len(nodes), len(edges)
+
+        A = np.zeros((n, m))
+        r = np.zeros(m)
+        b = np.array([node.demand for node in nodes], dtype=float)
+
+        for j, (u, v, data) in enumerate(edges):
+            pipe: Pipe = data["item"]
+
+            A[node_idx[pipe.start_node], j] = 1.0
+            A[node_idx[pipe.end_node], j] = -1.0
+            r[j] = pipe.resistance_factor(self.fluid)
+
+        if not np.isclose(b.sum(), 0.0, atol=1e-9):
+            raise ValueError("Total demand and supply must balance.")
+
+        # Remove one redundant continuity equation.
+        A_reduced = A[:-1, :]
+        b_reduced = -b[:-1]
+
+        # Minimise sum(r * Q**2), subject to A @ Q = -b.
+        W_inv = np.diag(1.0 / r)
+        M = A_reduced @ W_inv @ A_reduced.T
+
+        Q = W_inv @ A_reduced.T @ np.linalg.solve(M, b_reduced)
+
+        for j, (_, _, data) in enumerate(edges):
+            data["item"].flowrate = Q[j]
 
 
 def solve_hardy_cross(
