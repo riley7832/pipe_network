@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import networkx as nx
 import sympy as sp
 
-from pipe_network.network import PipeNetwork, solve_network, solve_hardy_cross
+from pipe_network.network import PipeNetwork, solve_hardy_cross
 from pipe_network.pipe import Fluid, Node, Pipe
 
 
