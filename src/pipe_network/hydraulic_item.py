@@ -1,41 +1,13 @@
-import math
 from abc import ABC, abstractmethod
 from collections.abc import Hashable
 from dataclasses import dataclass
+from itertools import pairwise
 
 import numpy as np
 
+from .fluids import Fluid, swamee_jain_friction_factor
+
 gravity = 9.81
-
-
-@dataclass
-class Fluid:
-    density: float
-    viscosity: float
-
-
-def swamee_jain_friction_factor(pipe: Pipe, fluid: Fluid):
-    fluid_velocity = abs(pipe.flowrate) / pipe.cross_sectional_area
-    reynolds = fluid.density * fluid_velocity * pipe.inner_diameter / fluid.viscosity
-    if reynolds == 0:
-        return 0
-    f_laminar = 64 / reynolds
-    f_turbulent = (
-        0.25
-        / math.log10(
-            pipe.absolute_roughness / (3.7 * pipe.inner_diameter) + 5.74 / reynolds**0.9
-        )
-        ** 2
-    )
-
-    if reynolds < 2300:
-        return f_laminar
-
-    elif reynolds > 5000:
-        return f_turbulent
-
-    weight = (reynolds - 2300) / (5000 - 2300)
-    return (1 - weight) * f_laminar + weight * f_turbulent
 
 
 @dataclass
@@ -54,6 +26,14 @@ class Node:
 
     def __repr__(self) -> str:
         return str(self.identifier)
+
+
+@dataclass
+class Reservoir(Node):
+    """Fixed-pressure boundary, normally specified by its water-surface pressure."""
+
+    demand: float = 0.0
+    pressure: float | None = 0.0
 
 
 class HydraulicItem(ABC):
@@ -112,14 +92,6 @@ class Pipe(HydraulicItem):
 
 
 @dataclass
-class Reservoir(Node):
-    """Fixed-pressure boundary, normally specified by its water-surface pressure."""
-
-    demand: float = 0.0
-    pressure: float | None = 0.0
-
-
-@dataclass
 class Pump(HydraulicItem):
     """Pump link with head curve H(Q) = shutoff_head - curve_coefficient * Q²."""
 
@@ -136,7 +108,9 @@ class Pump(HydraulicItem):
         if self.head_curve:
             # Interpolate between curve points and linearly extrapolate beyond the ends.
             points = self.head_curve
-            for (q0, h0), (q1, h1) in zip(points, points[1:]):
+            for (q0, h0), (q1, h1) in pairwise(
+                points
+            ):  # Gets 2 adjacent (flow, head) points on the pump curve
                 if q0 <= self.flowrate <= q1:
                     return h0 + (h1 - h0) * (self.flowrate - q0) / (q1 - q0)
             (q0, h0), (q1, h1) = (

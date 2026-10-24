@@ -5,7 +5,7 @@ import networkx as nx
 import sympy as sp
 
 from pipe_network.network import PipeNetwork, solve_hardy_cross
-from pipe_network.pipe import Fluid, Node, Pipe
+from pipe_network.hydraulic_item import Fluid, Node, Pipe
 
 
 def plot_digraph(network: PipeNetwork, figsize=(10, 7), seed=42):
